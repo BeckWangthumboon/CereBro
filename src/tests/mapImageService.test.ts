@@ -53,6 +53,48 @@ function colorBounds(
     return { count, top, bottom };
 }
 
+function goldPixels(image: Awaited<ReturnType<typeof pixels>>) {
+    let count = 0;
+    for (let offset = 0; offset < image.data.length; offset += image.info.channels) {
+        const [r, g, b] = [image.data[offset], image.data[offset + 1], image.data[offset + 2]];
+        if (r >= 220 && g >= 150 && g <= 215 && b <= 90) count++;
+    }
+    return count;
+}
+
+describe('prefight placement highlight', () => {
+    const node = warNodesData.find(n => Number(n.id) === 5)!;
+
+    async function renderPrefightNode({ isMine, isTarget }: { isMine: boolean; isTarget: boolean }) {
+        const fixture = await createMapImageFixture();
+        const portrait = fixture.assignments.get(1)!.defenderImage!;
+        const assignments = new Map([[5, {
+            defenderImage: portrait,
+            attackerImage: portrait,
+            isTarget,
+            prefightImages: [{ url: portrait, borderColor: '#94a3b8', isMine }],
+        }]]);
+        return MapImageService.generateMapImage(WarMapType.STANDARD, [node], assignments, fixture.imageCache);
+    }
+
+    it("marks a teammate's fight in gold when the plan recipient places its prefight", async () => {
+        const someoneElsePlaces = await pixels(await renderPrefightNode({ isMine: false, isTarget: false }));
+        const recipientPlaces = await renderPrefightNode({ isMine: true, isTarget: false });
+        await saveArtifact('prefight-for-teammate', recipientPlaces);
+        expect(goldPixels(someoneElsePlaces), 'prefights placed by others stay unmarked').toBe(0);
+        expect(goldPixels(await pixels(recipientPlaces)), 'gold outline on the node and ring on the badge')
+            .toBeGreaterThan(500);
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("leaves the recipient's own fight looking the same when they also place its prefight", async () => {
+        const ownPrefight = await renderPrefightNode({ isMine: true, isTarget: true });
+        const othersPrefight = await renderPrefightNode({ isMine: false, isTarget: true });
+        expect(ownPrefight.equals(othersPrefight), 'no prefight marking on an own fight').toBe(true);
+        expect(fetch).not.toHaveBeenCalled();
+    });
+});
+
 describe('war map PNG export', () => {
     it.each(maps)('shows all ten $name defense assignments with complete player rows and portraits', async map => {
         const fixture = await createMapImageFixture();

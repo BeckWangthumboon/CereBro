@@ -11,7 +11,7 @@ export interface NodeAssignment {
     attackerImage?: string;
     attackerClass?: ChampionClass;
     isTarget: boolean; // True if assigned to the player receiving the plan
-    prefightImages?: { url: string; borderColor: string }[]; // Updated to support multiple prefights with colors
+    prefightImages?: { url: string; borderColor: string; placerId?: string; isMine?: boolean }[]; // isMine: the player receiving the plan places this prefight
     assignedColor?: string; // Color for the node border (for overview map)
     isAttackerTactic?: boolean;
     isDefenderTactic?: boolean;
@@ -48,7 +48,7 @@ export class MapImageService {
 
     private static readonly HIGHLIGHT_GLOW = '#0ea5e9'; // sky-500
     private static readonly HIGHLIGHT_BORDER = '#ffffff'; // sky-400
-    private static readonly HIGHLIGHT_PREFIGHT = '#ffffff'; // purple-400
+    private static readonly HIGHLIGHT_PREFIGHT = '#fbbf24'; // amber-400
     private static readonly HIGHLIGHT_TEXT = '#ffffff'; // white
 
     private static readonly SWORD_PATH = "M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5L18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2";
@@ -379,12 +379,19 @@ export class MapImageService {
             const assignment = assignments.get(Number(node.id));
             const isTarget = assignment?.isTarget;
             const prefightImages = assignment?.prefightImages || [];
+            const placesPrefightHere = !isTarget && prefightImages.some(pf => pf.isMine);
 
             // Colors
             let borderProps = isTarget ? `class="node-fill border-highlight"` : `class="node-fill border-default"`;
             let badgeTextColorClass = isTarget ? "badge-text badge-text-highlight" : "badge-text";
             let badgeStrokeVal = isTarget ? this.HIGHLIGHT_BORDER : this.LINE_COLOR;
             let badgeFillVal = "rgba(15, 23, 42, 0.95)"; // Default dark fill
+
+            if (placesPrefightHere) {
+                borderProps = `class="node-fill border-prefight"`;
+                badgeTextColorClass = "badge-text badge-text-highlight";
+                badgeStrokeVal = this.HIGHLIGHT_PREFIGHT;
+            }
 
             // Override fill for assigned player
             if (assignment?.assignedColor) {
@@ -493,9 +500,13 @@ export class MapImageService {
                         const pfBase64 = imageCache.get(pf.url);
                         const xPos = startX + (i * spacing);
                         const borderColor = pf.borderColor || '#94a3b8';
+                        const mineRing = placesPrefightHere && pf.isMine
+                            ? `<circle r="${pfR + 4}" fill="none" stroke="${this.HIGHLIGHT_PREFIGHT}" stroke-width="4" filter="url(#glow)" />`
+                            : '';
 
                         innerContent += `
                             <g transform="translate(${xPos}, 0)">
+                                ${mineRing}
                                 <circle r="${pfR}" fill="#0f172a" stroke="${borderColor}" stroke-width="2" />
                                 <g clip-path="url(#clip-${node.id}-PF-${i})">
                                     <image href="${pfBase64}" x="${-pfR}" y="${-pfR}" width="${pfR * 2}" height="${pfR * 2}" preserveAspectRatio="xMidYMid slice" />

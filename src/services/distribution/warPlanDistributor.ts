@@ -183,7 +183,7 @@ export async function distributeWarPlan(
         }
 
         // Collect Prefight Images with Border Colors
-        const prefightImages: { url: string; borderColor: string }[] = [];
+        const prefightImages: { url: string; borderColor: string; placerId?: string }[] = [];
         if (fight.prefightChampions?.length > 0) {
             for (const pf of fight.prefightChampions) {
                 if (pf.champion?.images) {
@@ -191,7 +191,7 @@ export async function distributeWarPlan(
                     uniqueImageUrls.add(pfImg);
 
                     const borderColor = (pf.player?.id && globalColorMap.get(pf.player.id)) || '#94a3b8';
-                    prefightImages.push({ url: pfImg, borderColor });
+                    prefightImages.push({ url: pfImg, borderColor, placerId: pf.player?.id });
                 }
             }
         }
@@ -679,7 +679,10 @@ export async function distributeWarPlan(
 
         // Copy BG map base state
         if (bgMap) {
-            bgMap.forEach((val, key) => assignments.set(key, { ...val }));
+            bgMap.forEach((val, key) => assignments.set(key, {
+                ...val,
+                prefightImages: val.prefightImages?.map(pf => ({ ...pf, isMine: pf.placerId === playerObj.id })),
+            }));
         }
 
         // Mark player targets

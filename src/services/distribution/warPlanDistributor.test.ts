@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ComponentType, type Client, type ContainerBuilder } from 'discord.js';
 import { WarMapType, type WarVideo } from '@prisma/client';
 import { distributeWarPlan } from './warPlanDistributor';
+import type { NodeAssignment } from '../mapImageService';
 
+const generateMapImage = vi.hoisted(() => vi.fn());
 const db = vi.hoisted(() => ({
     alliance: vi.fn(), war: vi.fn(), tactic: vi.fn(), bans: vi.fn(),
     players: vi.fn(), history: vi.fn(), roster: vi.fn(),
@@ -16,7 +18,7 @@ vi.mock('../prismaService', () => ({ prisma: {
 vi.mock('../mapImageService', () => ({ MapImageService: {
     getPlayerPalette: () => ['#123456'],
     preloadImages: async () => new Map(),
-    generateMapImage: async () => Buffer.from('test map'),
+    generateMapImage,
 } }));
 vi.mock('../championService', () => ({ getChampionByName: async () => null }));
 vi.mock('../loggerService', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -68,6 +70,7 @@ beforeEach(() => {
     db.bans.mockResolvedValue([]);
     db.players.mockResolvedValue([player]);
     db.roster.mockResolvedValue([]);
+    generateMapImage.mockResolvedValue(Buffer.from('test map'));
     dmSend.mockResolvedValue(undefined);
     threadSend.mockResolvedValue(undefined);
     thread.members.add.mockResolvedValue(undefined);
@@ -144,5 +147,28 @@ describe('historical recordings in distributed AW plans', () => {
         const teammate = { ...player, id: 'teammate', ingameName: 'Teammate' };
         db.history.mockResolvedValue([historicalFight([video('teammate', { submittedById: teammate.id })], teammate)]);
         expect(await assignments()).toContain('[Teammate](https://cerebro.example/war-videos/teammate)');
+    });
+});
+
+describe('prefight placements on the distributed plan map', () => {
+    it("marks only the prefights the recipient places, so the map can highlight them", async () => {
+        const teammate = { ...player, id: 'teammate', ingameName: 'Teammate' };
+        const prefight = (id: number, placer: typeof player) => ({
+            playerId: placer.id, player: placer,
+            champion: { id, name: `Prefight ${id}`, class: 'COSMIC', images: { p_64: `https://img.example/${id}.png` } },
+        });
+        const teammateFight = { ...fight, id: 'teammate-fight', nodeId: 8, node: { id: 8, nodeNumber: 8 },
+            playerId: teammate.id, player: teammate, prefightChampions: [prefight(201, player)] };
+        db.war.mockResolvedValue({ ...war, fights: [
+            { ...fight, prefightChampions: [prefight(202, teammate)] },
+            teammateFight,
+        ] });
+        db.history.mockResolvedValue([]);
+        await assignments();
+
+        expect(generateMapImage).toHaveBeenCalledOnce();
+        const nodes = generateMapImage.mock.calls[0][2] as Map<number, NodeAssignment>;
+        expect(nodes.get(8)?.prefightImages).toEqual([expect.objectContaining({ url: 'https://img.example/201.png', isMine: true })]);
+        expect(nodes.get(7)?.prefightImages).toEqual([expect.objectContaining({ url: 'https://img.example/202.png', isMine: false })]);
     });
 });
